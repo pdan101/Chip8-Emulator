@@ -1,5 +1,7 @@
 package chip;
 
+import java.io.*;
+
 public class Chip {
 
     private char[] memory;
@@ -17,6 +19,8 @@ public class Chip {
 
     private byte[] display;
 
+    private boolean needRedraw;
+
     public void init() {
         memory = new char[4096];
         V = new char[16];
@@ -32,6 +36,9 @@ public class Chip {
         keys = new byte[16];
 
         display = new byte[64 * 32];
+
+        needRedraw = false;
+        loadFontset();
     }
 
     public void run() {
@@ -41,7 +48,30 @@ public class Chip {
         //decode opcode
         switch(opcode & 0xF000){
 
-            case 0x8000:
+            case 0x1000: //1NNN: Jumps to address NNN
+                break;
+
+            case 0x2000: //2NNN: Calls subroutine at NNN
+                stack[stackPointer] = pc;
+                stackPointer++;
+                pc = (char)(opcode & 0x0FFF);
+                break;
+
+            case 0x3000: //3XNN: Skips the next instruction if VX equals NN
+                break;
+
+            case 0x6000: //6XNN: Set VX to NN
+                int x = (opcode & 0x0F00) >> 8;
+                V[x] = (char)(opcode & 0x00FF);
+                pc += 2;
+                break;
+
+            case 0x7000: //7XNN: Adds NN to VX
+                int x1 = (opcode & 0x0F00) >> 8;
+                V[x1] = (char) ((V[x1] + (opcode & 0x00FF)) & 0xFF);
+                break;
+
+            case 0x8000: //Contains more data in last four bits
                 switch(opcode & 0x000F){
                     case 0x0000:
                         //do something
@@ -52,14 +82,63 @@ public class Chip {
                         break;
                 }
                 break;
+
+            case 0xA000: //ANNN: Set I to NNN
+                I = (char)(opcode & 0x0FFF);
+                pc += 2;
+                break;
+
+            case 0xD000: //DXYN: Draws a sprite (X, Y) size (8, N). Sprite is located at I
+                pc += 2;
+                break;
+
             default:
                 System.err.println("Unsupported Opcode!");
                 System.exit(0);
+
+
         }
         //execute opcode
     }
 
     public byte[] getDisplay() {
         return display;
+    }
+
+    public boolean needsRedraw() {
+        return needRedraw;
+    }
+
+    public void removeDrawFlag() {
+        needRedraw = false;
+    }
+
+    public void loadProgram(String file) throws FileNotFoundException {
+        DataInputStream input = null;
+        try{
+            input = new DataInputStream(new FileInputStream(new File(file)));
+            int offset = 0;
+            while(input.available() > 0){
+                memory[0x200 + offset] = (char)(input.readByte() & 0xFF);
+                offset++;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.exit(0);
+        } finally {
+            if(input != null){
+                try{
+                    input.close();
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public void loadFontset() {
+        for(int i = 0; i < ChipData.fontset.length; i++){
+            memory[0x50 + i] = (char)(ChipData.fontset[i] & 0xFF);
+        }
     }
 }
